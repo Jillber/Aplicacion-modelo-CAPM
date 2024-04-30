@@ -1,0 +1,435 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r}
+library(readxl)
+CAPM <- read_excel("CAPM.xlsx")
+View(CAPM)
+attach(CAPM)
+
+```
+
+
+```{r}
+install.packages("TSA")
+install.packages("tseries")
+install.packages("corrgram")
+install.packages("forecast")
+install.packages("fGarch")
+install.packages("timeDate")
+install.packages("timeSeries")
+install.packages("fBasics")
+install.packages("lmtest")
+install.packages("rugarch")
+install.packages("fPortfolio")
+install.packages("parallel")
+install.packages("fAssets")
+install.packages("ggplot2")
+
+library(TSA)
+library(tseries)
+library(corrgram)
+library(forecast)
+library(fGarch)
+library(timeDate)
+library(timeSeries)
+library(fBasics)
+library(lmtest)
+library(rugarch)
+library(fPortfolio)
+library(parallel)
+library(fAssets)
+library(ggplot2)
+
+```
+
+
+```{r}
+###Definir como series de tiempo
+BCO<-ts(`BANCOLOMBIA`,frequency = 252, start=c(2007,11,27))
+ISA<-ts(`ISA`, frequency = 252, start=c(2007,11,27))
+ECO<-ts(`ECOPETROL`, frequency = 252, start=c(2007,11,27))
+ICOLCAP<-ts(`COLCAP`, frequency = 252, start=c(2007,11,27))
+
+fechas=seq(as.Date("2007/11/27"), length.out = length(BCO), by="day")
+
+```
+
+```{r}
+##Retornos
+R_bco<-diff(log(BCO))
+R_isa<-diff(log(ISA))
+R_eco<-diff(log(ECO))
+Rm<-diff(log(ICOLCAP))
+Rf<-(1+TES/100)^(1/252)-1
+Rf<-Rf[!is.na(Rf)]
+
+```
+
+
+```{r}
+#Precios de cierre
+#se genera una nueva variable en la que se unen los tres activos
+cartera<-cbind(BCO,ISA,ECO)
+#se genera un gráfico donde se ve el precio de cierre de los 3 activos 
+plot(cartera, col="darkgreen", xlab="Fecha")
+#estadística descriptiva de los activos 
+summary(cartera)
+
+```
+
+
+```{r}
+#Calcular retornos
+#ahora miramos los retornos unidos con el fin de observar si ha habido momentos donde haya cambios muy grandes 
+retornos<-cbind(R_bco,R_isa,R_eco)
+plot(retornos, col="darkblue", xlab="Fecha")
+summary(retornos)
+
+```
+
+
+```{r}
+#Rendimiento y volatilidad
+#Markowitz: hay una relación entre rendimiento y riesgo, el rendimiento se mide por la media y l volatilidad y el riesgo se mide por la desviación estandar en terminos estadisticos 
+rendimiento<-c(mean(Rm), mean(R_bco), mean(R_isa), mean(R_eco),mean(Rf))
+volatilidad<-c(sd(Rm), sd(R_bco), sd(R_isa), sd(R_eco),sd(Rf))
+#en esta tabla pongo la media y la volatilidad de cada uno de mis activos 
+tabla1<-data.frame(rbind(rendimiento, volatilidad))
+colnames(tabla1)<-c("R_COLCAP","R_BCO","R_ISA","R_ECO","R_TES")
+#esto ya esta multiplicado por cien entonces ya es porcentaje 
+tabla1*100
+```
+
+
+```{r}
+##índice de Sharpe
+sharpe<-(rendimiento-mean(Rf))/volatilidad
+sharpe
+#el indice de shape del mercado es negativo, osea que el colcap no esta generando un buen retorno frente al activo libre de riesgo, el de bancolombia es el mas alto con 0.0097, ecopetrol tiene 0.006 isa tiene 0.0075 el ultimo da cero porque es el tes
+#si tuviesemos que elegir tomariamos los que tuvieran los indices sharpe positivos más altos
+#la interpretación es: por cada unidad de riesgo este es el retorno que estamos obteniendo por cada uno mis activos 
+```
+
+
+```{r}
+##Matriz de varianzas y covarianzas
+cov<-cov(retornos)*100
+cov
+#y las correlaciones, permite revisar el tema de los perfiles de riesgo si soy arriesgado deberia bucar activos que esten muy relacionadios, si tengo un perfil conservador quiero correlaciones negativas que me permitan cubrirme del riesgo y si tengo un perfil moderado quisiera correlaciones cercanas a cero 
+cor<-cor(retornos)*100
+cor
+
+```
+
+
+```{r}
+#con esta funcion se calcula directamente cual es la mejor combinacion de participación de cada uno de mis activos, la idea es maximizar el retorno con el menor riesgo  y eso es lo que tiene en cuenta esta funcion
+espcartera<-portfolioSpec()
+#le digo cual es la rentabilidad de mi activo libre de riesgo 
+setRiskFreeRate(espcartera)<- 0.0003 ##Rentabilidad Activo Libre de Riesgo
+#aqui le digo que quiero ver varios puntos hasta 20 dias 
+setNFrontierPoints(espcartera) <- 20
+#genero la frontera eficiente que se basa en los retornos y la cartera que generamos arriba 
+# en el var el riesgo es más alto cuando tengo un solo activo pero va disminuyendo en la medida en que voy diversificando en activos diferentes en este caso mi mayor escenario de pérdida sería un 2%
+Frontera <- portfolioFrontier(as.timeSeries(retornos),spec=espcartera )
+Frontera
+
+```
+
+
+```{r}
+##Graficar frontera eficiente
+frontierPlot(Frontera)
+grid()
+#aqui le digo que me ponga en rojo el punto tangente 
+tangencyPoints(Frontera, pch = 19, col = "red", cex=2)
+# que en verde me ponga la línea 
+tangencyLines(Frontera, col="darkgreen", pch=19, cex=2)
+#que en azul me ponga el punto de mínima varianza 
+minvariancePoints(Frontera, col="blue", pch=19, cex=2)
+#en verde simulación via montecarlo de todos los posibles portafolios 
+monteCarloPoints(Frontera, col="green", cex=0.001)
+
+```
+
+
+```{r}
+##Portafolios
+#estos serían los pesos bajo los cuales se geeraría un portafolio eficiente 
+efPortfolio <- efficientPortfolio(as.timeSeries(retornos),espcartera)
+efPortfolio
+
+tgPortfolio <- tangencyPortfolio(as.timeSeries(retornos),espcartera)
+tgPortfolio
+
+```
+
+
+```{r}
+##Retornos del portafolio
+#genero el retorno completo del portfio basandome en los pesos 
+R_Pf<-0.3661*R_bco+0.4399*R_isa+0.1940*R_eco
+#con ese armo el tema del capm 
+```
+
+
+```{r}
+###CAPM
+# aqui hallo Y que sería el retorno del portafolio menos el retorno del mercado
+Ri_Pf<-R_Pf-Rm
+#vuelvo y tengo el retorno del mercado frente al libre de riesgo que es mi x para poder generar el capm 
+Rm_Rf<-Rm-Rf
+# lo unico que cambia respecto a la clase pasa es que ya no genero el capm frente a activos sino frente a un portafolio 
+capm1<-lm(Ri_Pf~Rm_Rf)
+summary(capm1)
+#en la clase pasada ninguno de los interceptos daba significativo y en este caso si, osea que aquí puedo afirmar que mi portafolio tiene un exceso de retorno positivo sobre el mercado porque tiene un intercepto mayor a cero 
+#el beta del capm es negativo, el r cuadrado no es muy alto y el p valor corresponde a un escenario donde la relacion se da 
+```
+
+
+```{r}
+###CAPM Ampliado, se usan las variables exogenas que se habían usado la clase anterior 
+#vemos que ni la trm ni la tasa interbancaria afectan mi portafolio, se ve afectado de manera positiva por wti y se ve afectado de manera negativa por el mercado, además cambia el exceso de retorno porque ya no es significativo 
+R_wti<-diff(log(WTI))
+R_trm<-diff(log(TRM))
+Rtib<-(1+TIB/100)^(1/252)-1
+R_tib<-Rtib[!is.na(Rtib)]
+
+capm_a1<-lm(Ri_Pf ~ Rm_Rf + R_wti + R_trm + R_tib)
+summary(capm_a1)
+
+```
+
+
+```{r}
+##Modelos
+# se realiza un ajuste quitando las dos variables que no son significativas, entonces dejo solamente el componente capm que es el exceso de retorno del mercado y wti 
+#el exceso de retorno posirtivo vuelve a tener significancia 
+mod1<-lm(Ri_Pf ~ Rm_Rf + R_wti)
+summary(mod1)
+
+```
+
+
+```{r}
+##Validación de supuestos
+e1<-residuals(mod1)
+
+### Normalidad
+par(mfrow=c(1,2))
+qqnorm(scale(e1))
+qqline(scale(e1),col="blue")
+
+histograma<-function(modelo, nbreaks=12) {
+  hist(e1, breaks=nbreaks, freq=FALSE, main="Histograma de residuales")
+  rug(jitter(e1), col="red")
+  curve(dnorm(x,mean=mean(e1), sd=sd(e1)), add=TRUE, col="blue", lwd=2)
+  lines(density(e1)$x, density(e1)$y, col="yellow", lwd=2, lty=2)
+}
+par(mfrow=c(1,1))
+histograma(modelo)
+
+jarque.bera.test(e1)
+ks.test(e1,"pnorm")
+
+```
+
+
+```{r}
+### No autocorrelación
+plot(scale(e1),type="l",main="Residuales")
+par(mfrow=c(1,2))
+acf(e1)
+pacf(e1)
+
+acf_e1 <- acf(e1, plot=FALSE, lag.max=36)$acf
+pacf_e1 <- pacf(e1, plot=FALSE, lag.max=36)$acf
+
+Q_stats <- c()
+Q_pvals <- c()
+for (i in 1:36) {
+  Q = Box.test(e1, lag=i)
+  Q_stats[[i]] <- Q$statistic
+  Q_pvals[[i]] <- Q$p.value
+}
+corrgram <- cbind(LAG=seq(1,36), ACF=acf_e1, PACF=pacf_e1, Q=Q_stats, "Prob>Q"=Q_pvals)
+corrgram
+
+```
+
+
+```{r}
+###Homocedasticidad
+e1_cuad=(e1-mean(e1))^2
+
+par(mfrow=c(1,2))
+acf(e1_cuad)
+pacf(e1_cuad)
+
+acf_e1c <- acf(e1_cuad, plot=FALSE, lag.max=12)$acf
+pacf_e1c <- pacf(e1_cuad, plot=FALSE, lag.max=12)$acf
+
+Q_stats <- c()
+Q_pvals <- c()
+for (i in 1:12) {
+  Q = Box.test(e1_cuad, lag=i)
+  Q_stats[[i]] <- Q$statistic
+  Q_pvals[[i]] <- Q$p.value
+}
+corrgram <- cbind(LAG=seq(1,12), ACF=acf_e1c, PACF=pacf_e1c, Q=Q_stats, "Prob>Q"=Q_pvals)
+corrgram
+
+```
+
+
+```{r}
+##Incorporar arima con exógenas
+variables<-cbind(Rm-Rf,R_wti)
+modelo<-arimax(Ri_Pf, order=c(1,0,1), xreg=variables, include.mean = FALSE)
+summary(modelo)
+coeftest(modelo)
+
+```
+
+
+```{r}
+##Validación de supuestos
+error<-residuals(modelo)
+e1<-error[!is.na(error)]
+
+### No autocorrelación
+plot(scale(e1),type="l",main="Residuales")
+par(mfrow=c(1,2))
+acf(e1)
+pacf(e1)
+
+acf_e1 <- acf(e1, plot=FALSE, lag.max=36)$acf
+pacf_e1 <- pacf(e1, plot=FALSE, lag.max=36)$acf
+
+Q_stats <- c()
+Q_pvals <- c()
+for (i in 1:36) {
+  Q = Box.test(e1, lag=i)
+  Q_stats[[i]] <- Q$statistic
+  Q_pvals[[i]] <- Q$p.value
+}
+corrgram <- cbind(LAG=seq(1,36), ACF=acf_e1, PACF=pacf_e1, Q=Q_stats, "Prob>Q"=Q_pvals)
+corrgram
+
+```
+
+
+```{r}
+### Normalidad
+par(mfrow=c(1,2))
+qqnorm(scale(e1))
+qqline(scale(e1),col="blue")
+
+histograma<-function(modelo, nbreaks=12) {
+  hist(e1, breaks=nbreaks, freq=FALSE, main="Histograma de residuales")
+  rug(jitter(e1), col="red")
+  curve(dnorm(x,mean=mean(e1), sd=sd(e1)), add=TRUE, col="blue", lwd=2)
+  lines(density(e1)$x, density(e1)$y, col="yellow", lwd=2, lty=2)
+}
+par(mfrow=c(1,1))
+histograma(modelo)
+
+jarque.bera.test(e1)
+ks.test(e1,"pnorm")
+
+```
+
+
+```{r}
+###Homocedasticidad
+e1_cuad=(e1-mean(e1))^2
+
+par(mfrow=c(1,2))
+acf(e1_cuad)
+pacf(e1_cuad)
+
+acf_e1c <- acf(e1_cuad, plot=FALSE, lag.max=12)$acf
+pacf_e1c <- pacf(e1_cuad, plot=FALSE, lag.max=12)$acf
+
+Q_stats <- c()
+Q_pvals <- c()
+for (i in 1:12) {
+  Q = Box.test(e1_cuad, lag=i)
+  Q_stats[[i]] <- Q$statistic
+  Q_pvals[[i]] <- Q$p.value
+}
+corrgram <- cbind(LAG=seq(1,12), ACF=acf_e1c, PACF=pacf_e1c, Q=Q_stats, "Prob>Q"=Q_pvals)
+corrgram
+
+```
+
+
+```{r}
+###Estimar modelo de heterocedasticidad condicionada
+modelo1<-ugarchspec(variance.model=list(model="sGARCH",garchOrder=c(1,1)), mean.model=list(armaOrder=c(1,1),include.mean=FALSE, external.regressors = variables), distribution.model="std")
+modelo2<-ugarchfit(spec=modelo1,data=Ri_Pf)
+show(modelo2)
+#el efecto del mercado ahora es positivo y el efecto del wti sigue siendo positivo pero menos importante, el componente negativo lo recoge el ma 1  
+```
+Ecuación de la media: ARIMAX(1,0,1)
+(Ri_Pf)t=0.272(Ri_Pf)t-1-0.373Et-1+0.0286(Rm-Rf)t+0.0127(R_wti)t+Et
+
+Ecuación de la varianza: GARCH(1,1)~T-Student
+St^2=0.000005+0.1656(Et-1)^2+0.727(St-1)^2
+
+```{r}
+###Valor en Riesgo - VaR
+#es un percentil 
+#grafico de la volatilidad historica 
+vol_hist<-sigma(modelo2)
+ts.plot(vol_hist)
+
+##Paramétrico ~ Normal
+alpha=0.01
+VaR_n<-mean(Ri_Pf)+sd(Ri_Pf)*qnorm(0.01)
+VaR_n
+
+##Modelo estimado
+VaR_m<-quantile(modelo2,probs=1-alpha)
+autoplot(VaR_m)
+
+```
+
+
+```{r}
+###queremos Comparar el var que genera el garch con el var de la normal y mirar como se comportan
+plot(-as.vector(VaR_m), type = "l", col = 4)
+abline(h=VaR_n, col = 2)
+legend('bottomleft', c("VaR GARCH", "VaR incondicional") ,
+       lty=1, col=c(4,2), bty='n', cex=.75)
+```
+
+
+```{r}
+###Backtesting para mirar cuantas veces durante todo el perioco cumplimos o no cumplimos en excedernos del valor definido como el var 
+#lo que queda en rojo son todas las veces que se excede el valor del var en la serie y eso esta asociado a que hubo varios momentos de volatilidad donde las series no tuvieron el comportamiento esperado de acuerdo al modelo, osea el riesgo fue mas delq ue se esperaba 
+n<-length(Ri_Pf)
+
+btest <- VaRTest(1-alpha,
+                 actual = -Ri_Pf,
+                 VaR = quantile(ugarchfit(spec=modelo1,data=-Ri_Pf), probs = 1-alpha))
+
+(1-alpha) * n ##Número de excepciones
+
+btest$actual.exceed ##Total de excepciones
+
+fecha=seq(as.Date("2007/11/28"), length.out = length(Ri_Pf), by="day")
+
+Data = data.frame(Ri_Pf, -VaR_m, fecha=fecha)
+ggplot(Data) +
+  geom_line(aes(x =  fecha, y = Ri_Pf), color = "gray") +
+  geom_line(aes(x =  fecha, y = q.0.99.), color = "blue") +
+  geom_point(data=Data[Data$Ri_Pf<Data$q.0.99.,], aes(x=fecha, y=q.0.99.), colour="red", size=5)
+
+```
+
+
+
